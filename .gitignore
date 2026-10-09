@@ -49,6 +49,9 @@ coverage/
 junit.xml
 .vitest/
 
+# PowerShell test reports
+/testResults.xml
+
 # Translations
 *.mo
 *.pot

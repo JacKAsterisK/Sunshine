@@ -165,6 +165,10 @@ sudo port install "${dependencies[@]}"
 
 #### Windows
 
+This fork provides `setup.bat`, `build.bat`, `install.bat` and a separate `update.bat` for x64 Windows.
+See [Windows fork installation](windows-fork-install.md) for source builds and a deployable installer bundle
+that does not require build tools on the Sunshine host.
+
 > [!WARNING]
 > Cross-compilation is not supported on Windows. You must build on the target architecture.
 

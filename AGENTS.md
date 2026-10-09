@@ -1,3 +1,7 @@
+## Repository workflow
+
+Work directly on master. Do not create feature branches or branch-based worktrees unless the user explicitly requests otherwise.
+
 ## Build and tests
 
 On Windows we use msys2 and ucrt64 to compile.

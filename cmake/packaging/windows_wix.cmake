@@ -1,6 +1,10 @@
 # WIX Packaging
 # see options at: https://cmake.org/cmake/help/latest/cpack_gen/wix.html
 
+if(NOT SUNSHINE_BUILD_WIX)
+    return()
+endif()
+
 # find dotnet
 find_program(DOTNET_EXECUTABLE dotnet HINTS "C:/Program Files/dotnet")
 
