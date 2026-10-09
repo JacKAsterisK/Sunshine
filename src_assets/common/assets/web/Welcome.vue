@@ -46,7 +46,7 @@
 
 <script>
   import ResourceCard from './ResourceCard.vue'
-  import { apiFetch } from './fetch_utils'
+  import { saveCredentials } from './credentials'
   import Notification from './Notification.vue'
   import NavbarSimple from './NavbarSimple.vue'
   import { LogIn } from '@lucide/vue'
@@ -71,32 +71,25 @@
       };
     },
     methods: {
-      save() {
+      /**
+       * @brief Save credentials and show validation or connection errors.
+       * @return {Promise<void>} Resolves when the form submission has finished.
+       */
+      async save() {
         this.error = null;
+        this.success = false;
         this.loading = true;
-        apiFetch("./api/password", {
-          method: "POST",
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify(this.passwordData),
-        }).then((r) => {
+        try {
+          await saveCredentials(this.passwordData);
+          this.success = true;
+          setTimeout(() => {
+            document.location.reload();
+          }, 5000);
+        } catch (error) {
+          this.error = error.message;
+        } finally {
           this.loading = false;
-          if (r.status === 200) {
-            r.json().then((rj) => {
-              this.success = rj.status;
-              if (this.success === true) {
-                setTimeout(() => {
-                  document.location.reload();
-                }, 5000);
-              } else {
-                this.error = rj.error;
-              }
-            });
-          } else {
-            this.error = "Internal Server Error";
-          }
-        });
+        }
       },
     },
   }

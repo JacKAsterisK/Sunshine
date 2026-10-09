@@ -48,7 +48,7 @@
         <b>{{ $t('_common.success') }}</b> {{ $t('password.success_msg') }}
       </div>
       <div class="mb-3 mt-4">
-        <button type="submit" class="btn btn-primary">
+        <button type="submit" class="btn btn-primary" :disabled="loading">
           <save :size="18" class="icon"></save>
           {{ $t('_common.save') }}
         </button>
@@ -59,7 +59,7 @@
 
 <script>
   import Navbar from './Navbar.vue'
-  import { apiFetch } from './fetch_utils'
+  import { saveCredentials } from './credentials'
   import { Save } from '@lucide/vue'
 
   export default {
@@ -71,6 +71,7 @@
       return {
         error: null,
         success: false,
+        loading: false,
         passwordData: {
           currentUsername: "",
           currentPassword: "",
@@ -81,30 +82,25 @@
       };
     },
     methods: {
-      save() {
+      /**
+       * @brief Save credentials and show validation or connection errors.
+       * @return {Promise<void>} Resolves when the form submission has finished.
+       */
+      async save() {
         this.error = null;
-        apiFetch("./api/password", {
-          method: "POST",
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify(this.passwordData),
-        }).then((r) => {
-          if (r.status === 200) {
-            r.json().then((rj) => {
-              this.success = rj.status;
-              if (this.success === true) {
-                setTimeout(() => {
-                  document.location.reload();
-                }, 5000);
-              } else {
-                this.error = rj.error;
-              }
-            });
-          } else {
-            this.error = "Internal Server Error";
-          }
-        });
+        this.success = false;
+        this.loading = true;
+        try {
+          await saveCredentials(this.passwordData);
+          this.success = true;
+          setTimeout(() => {
+            document.location.reload();
+          }, 5000);
+        } catch (error) {
+          this.error = error.message;
+        } finally {
+          this.loading = false;
+        }
       },
     },
   }
