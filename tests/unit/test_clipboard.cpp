@@ -15,8 +15,11 @@
 #include <string>
 
 #ifdef _WIN32
-  #include <shellapi.h>
+// clang-format off
+  // Windows types must precede the shell's DROPFILES declaration.
   #include <windows.h>
+  #include <shlobj.h>
+// clang-format on
 #endif
 
 TEST(ClipboardTextTest, AcceptsEmptyAsciiAndAllUnicodeWidths) {
