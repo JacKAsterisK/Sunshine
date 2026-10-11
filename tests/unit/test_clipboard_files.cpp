@@ -140,6 +140,30 @@ static int run_clipboardfiles_tests() {
     check(manyWire.size() > max_wire_bytes && manyWire.size() < max_manifest_bytes, "100k manifest bound");
     check(decode_manifest(manyWire).entries.size() == max_entries, "100k manifest decode");
     check(make_plan(many).size() == 1, "Tiny files were not batched");
+    const auto projectedPrefix = fs::path(L"C:\\stage") / fs::path(std::wstring(75, L'x')) / fs::path(std::wstring(32, L'a'));
+    const auto manyRoots = project_drop_roots(many, projectedPrefix);
+    check(manyRoots.size() == max_entries && drop_list_bytes(manyRoots) > max_wire_bytes && drop_list_bytes(manyRoots) <= max_drop_bytes, "100k individually selected roots still use the raw batch bound");
+    const auto oversizedStorage = root / fs::path(std::wstring(190, L'x'));
+    bool earlyBudgetRejected = false;
+    try {
+      receiver_t tooManyRoots(many, oversizedStorage);
+    } catch (const std::exception &error) {
+      earlyBudgetRejected = std::string(error.what()) == "Clipboard root list too large";
+    }
+    check(earlyBudgetRejected && !fs::exists(oversizedStorage), "Receiver root projection did not reject before creating a stage");
+    std::vector<fs::path> oversizedSourceRoots(max_entries, oversizedStorage / L"missing.txt");
+    bool sourceBudgetRejected = false;
+    try {
+      source_t tooManyRoots(oversizedSourceRoots, 0);
+    } catch (const std::exception &error) {
+      sourceBudgetRejected = std::string(error.what()) == "Clipboard root list too large";
+    }
+    check(sourceBudgetRejected, "Source selection did not reject its native root budget before scanning");
+    check(add_drop_path_bytes(max_drop_bytes - 8, 3) == max_drop_bytes, "Exact native root budget rejected");
+    rejects([&] {
+      add_drop_path_bytes(max_drop_bytes - 8, 4);
+    },
+            "Native root budget overflow accepted");
     many.entries.push_back(entry_t {"excess", false, 0, {}});
     rejects([&] {
       encode_manifest(many);

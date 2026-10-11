@@ -47,6 +47,7 @@ namespace clipboard_files {
   constexpr uint32_t version = 1;  ///< Negotiated bulk protocol version.
   constexpr uint32_t max_wire_bytes = 4 * 1024 * 1024;  ///< Maximum raw batch bytes.
   constexpr uint32_t max_manifest_bytes = 32 * 1024 * 1024;  ///< Maximum manifest bytes.
+  constexpr uint32_t max_drop_bytes = 32 * 1024 * 1024;  ///< Maximum native CF_HDROP selection bytes, independent of batch size.
   constexpr uint32_t max_entries = 100000;  ///< Maximum combined file and directory count.
   constexpr uint64_t max_total_bytes = 64ULL * 1024 * 1024 * 1024;  ///< Maximum total regular file bytes.
   constexpr unsigned parallel_workers = 4;  ///< Maximum concurrent transport lanes.
@@ -455,6 +456,48 @@ namespace clipboard_files {
   }
 
   /**
+   * @brief Add a native selection path length without exceeding the CF_HDROP allocation budget.
+   * @param bytes Existing byte budget, including the DROPFILES header and final list terminator.
+   * @param characters UTF-16 path length without its individual terminator.
+   * @return Updated selection byte budget.
+   */
+  inline size_t add_drop_path_bytes(size_t bytes, size_t characters) {
+    require(bytes <= max_drop_bytes && characters > 0 && characters < (max_drop_bytes - bytes) / sizeof(wchar_t), "Clipboard root list too large");
+    return bytes + (characters + 1) * sizeof(wchar_t);
+  }
+
+  /**
+   * @brief Bound a native source or destination selection before probing files or allocating its buffer.
+   * @param paths Absolute paths to project into CF_HDROP.
+   * @return Complete native selection byte budget.
+   */
+  inline size_t drop_list_bytes(const std::vector<std::filesystem::path> &paths) {
+    require(!paths.empty() && paths.size() <= max_entries, "Too many clipboard roots");
+    size_t bytes = sizeof(DROPFILES) + sizeof(wchar_t);
+    for (const auto &path : paths) {
+      bytes = add_drop_path_bytes(bytes, path.native().size());
+    }
+    return bytes;
+  }
+
+  /**
+   * @brief Project received top-level roots and check their expanded native selection before staging.
+   * @param manifest Validated incoming relative entries.
+   * @param directory Random destination stage path, whose prefix expands every received root.
+   * @return Bounded absolute roots ready for later native publication.
+   */
+  inline std::vector<std::filesystem::path> project_drop_roots(const manifest_t &manifest, const std::filesystem::path &directory) {
+    std::vector<std::filesystem::path> roots;
+    for (const auto &entry : manifest.entries) {
+      if (entry.path.find('/') == std::string::npos) {
+        roots.push_back(directory / std::filesystem::path(wide(entry.path)));
+      }
+    }
+    drop_list_bytes(roots);
+    return roots;
+  }
+
+  /**
    * @brief Hash and track an immutable clipboard source selection without pinning all handles.
    */
   class source_t {
@@ -471,6 +514,7 @@ namespace clipboard_files {
      * @param cancelled Optional cancellation and generation check.
      */
     source_t(const std::vector<std::filesystem::path> &roots, uint32_t sequence, cancel_t cancelled = {}) {
+      drop_list_bytes(roots);
       manifest.sequence = sequence;
       uint64_t total_bytes = 0;
       size_t manifest_bytes = 13;
@@ -576,6 +620,8 @@ namespace clipboard_files {
         plan(make_plan(manifest)) {
       // Storage is a fixed local per-user path supplied by the application.
       local_path(storage);
+      directory = storage / std::filesystem::path(wide(random_id()));
+      roots = project_drop_roots(manifest, directory);
       auto existing = storage;
       while (!std::filesystem::exists(native_path(existing))) {
         existing = existing.parent_path();
@@ -589,7 +635,6 @@ namespace clipboard_files {
       }
       ULARGE_INTEGER free {};
       require(GetDiskFreeSpaceExW(native_path(storage).c_str(), &free, nullptr, nullptr) && free.QuadPart >= total + 1024ULL * 1024 * 1024, "Insufficient clipboard staging space");
-      directory = storage / std::filesystem::path(wide(random_id()));
       require(std::filesystem::create_directory(native_path(directory)), "Cannot create private clipboard stage");
       marker = directory;
       marker += L".pending";
@@ -615,9 +660,6 @@ namespace clipboard_files {
         for (const auto &entry : manifest.entries) {
           require(!check || !check(), "Clipboard transfer cancelled");
           auto path = directory / std::filesystem::path(wide(entry.path));
-          if (entry.path.find('/') == std::string::npos) {
-            roots.push_back(path);
-          }
           if (!entry.directory) {
             plain_path(path.parent_path());
             handle_t file(CreateFileW(native_path(path).c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT, nullptr));
@@ -812,9 +854,11 @@ namespace clipboard_files {
     require(drop != nullptr, "Clipboard files unavailable");
     UINT count = DragQueryFileW(drop, 0xffffffff, nullptr, 0);
     require(count > 0 && count <= max_entries, "Too many clipboard roots");
+    size_t bytes = sizeof(DROPFILES) + sizeof(wchar_t);
     for (UINT i = 0; i < count; i++) {
       UINT length = DragQueryFileW(drop, i, nullptr, 0);
       require(length > 0 && length <= 32760, "Invalid clipboard root");
+      bytes = add_drop_path_bytes(bytes, length);
       std::wstring path(length + 1, 0);
       require(DragQueryFileW(drop, i, path.data(), length + 1) == length, "Cannot read clipboard root");
       path.resize(length);
@@ -836,12 +880,10 @@ namespace clipboard_files {
      */
     explicit prepared_drop_t(const std::vector<std::filesystem::path> &paths) {
       require(!paths.empty(), "Empty clipboard file delivery");
-      size_t bytes = sizeof(DROPFILES) + sizeof(wchar_t);
+      size_t bytes = drop_list_bytes(paths);
       for (const auto &path : paths) {
         plain_path(path);
-        bytes += (path.native().size() + 1) * sizeof(wchar_t);
       }
-      require(bytes <= max_wire_bytes, "Clipboard root list too large");
       memory = GlobalAlloc(GMEM_MOVEABLE | GMEM_ZEROINIT, bytes);
       require(memory != nullptr, "Cannot allocate clipboard file list");
       auto *drop = static_cast<DROPFILES *>(GlobalLock(memory));
