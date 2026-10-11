@@ -254,6 +254,20 @@ TEST(ClipboardTextTest, WindowsBackendUsesOnlyAnIsolatedNamedWindowStation) {
     EXPECT_TRUE(snapshot.has_text);
     EXPECT_EQ(snapshot.text, unicode);
     EXPECT_EQ(snapshot.sequence, published);
+    {
+      test_clipboard_owner_t owner;
+      if (!owner.available()) {
+        throw std::runtime_error("Cannot inspect isolated native text formats");
+      }
+      // Missing conversions are registered by CloseClipboard and used to
+      // change the captured generation after a successful native publication.
+      for (auto format : {CF_UNICODETEXT, CF_TEXT, CF_OEMTEXT, CF_LOCALE}) {
+        EXPECT_TRUE(IsClipboardFormatAvailable(format));
+        EXPECT_NE(GetClipboardData(format), nullptr);
+      }
+      EXPECT_EQ(clipboard::sequence(), published);
+    }
+    EXPECT_EQ(clipboard::sequence(), published);
 
     uint32_t local = 0;
     EXPECT_EQ(clipboard::write_text("newer local text", published, &local), clipboard::status_e::ok);
@@ -272,6 +286,17 @@ TEST(ClipboardTextTest, WindowsBackendUsesOnlyAnIsolatedNamedWindowStation) {
     EXPECT_TRUE(snapshot.text.empty());
     EXPECT_EQ(snapshot.sequence, published);
     EXPECT_EQ(published, clipboard::sequence());
+    {
+      test_clipboard_owner_t owner;
+      if (!owner.available()) {
+        throw std::runtime_error("Cannot inspect isolated empty text formats");
+      }
+      for (auto format : {CF_UNICODETEXT, CF_TEXT, CF_OEMTEXT, CF_LOCALE}) {
+        EXPECT_TRUE(IsClipboardFormatAvailable(format));
+      }
+      EXPECT_EQ(clipboard::sequence(), published);
+    }
+    EXPECT_EQ(clipboard::sequence(), published);
 
     {
       test_clipboard_owner_t owner;

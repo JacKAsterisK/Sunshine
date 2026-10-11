@@ -8,6 +8,7 @@
 #include <chrono>
 #include <cstring>
 #include <thread>
+#include <vector>
 
 #ifdef _WIN32
   #ifndef NOMINMAX
@@ -115,6 +116,39 @@ namespace clipboard {
         }
       }
     };
+
+    /** @brief Prepare an immediate format buffer before acquiring the clipboard. */
+    struct allocation_t {
+      HGLOBAL handle = nullptr;  ///< Movable buffer until Windows takes ownership.
+
+      /** @brief Free a buffer whose ownership did not transfer. */
+      ~allocation_t() {
+        if (handle) {
+          GlobalFree(handle);
+        }
+      }
+
+      /** @brief Copy a bounded prepared format into its movable allocation. */
+      bool prepare(const void *bytes, std::size_t length) {
+        handle = GlobalAlloc(GMEM_MOVEABLE, length);
+        auto memory = handle ? GlobalLock(handle) : nullptr;
+        if (!memory) {
+          return false;
+        }
+        std::memcpy(memory, bytes, length);
+        GlobalUnlock(handle);
+        return true;
+      }
+
+      /** @brief Transfer one prepared format while the caller holds the clipboard. */
+      bool publish(UINT format) {
+        if (!SetClipboardData(format, handle)) {
+          return false;
+        }
+        handle = nullptr;
+        return true;
+      }
+    };
   }  // namespace
 #endif
 
@@ -186,23 +220,45 @@ namespace clipboard {
     if (!text.empty() && !length) {
       return status_e::invalid_text;
     }
-    const auto handle = GlobalAlloc(GMEM_MOVEABLE, (static_cast<std::size_t>(length) + 1) * sizeof(wchar_t));
-    if (!handle) {
-      return status_e::unavailable;
-    }
-    auto wide = static_cast<wchar_t *>(GlobalLock(handle));
-    if (!wide) {
-      GlobalFree(handle);
-      return status_e::unavailable;
-    }
+    std::wstring wide(length, L'\0');
     if (length) {
-      MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text.data(), static_cast<int>(text.size()), wide, length);
+      MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text.data(), static_cast<int>(text.size()), wide.data(), length);
     }
-    wide[length] = L'\0';
-    GlobalUnlock(handle);
+    LCID locale = MAKELCID(LOWORD(GetKeyboardLayout(0)), SORT_DEFAULT);
+    DWORD ansi_page = 0, oem_page = 0;
+    auto code_pages = [&] {
+      return GetLocaleInfoW(locale, LOCALE_IDEFAULTANSICODEPAGE | LOCALE_RETURN_NUMBER, reinterpret_cast<LPWSTR>(&ansi_page), sizeof(ansi_page) / sizeof(wchar_t)) &&
+             GetLocaleInfoW(locale, LOCALE_IDEFAULTCODEPAGE | LOCALE_RETURN_NUMBER, reinterpret_cast<LPWSTR>(&oem_page), sizeof(oem_page) / sizeof(wchar_t));
+    };
+    if (!code_pages()) {
+      locale = GetUserDefaultLCID();
+      if (!code_pages()) {
+        return status_e::unavailable;
+      }
+    }
+    if (!ansi_page) {
+      ansi_page = GetACP();
+    }
+    if (!oem_page) {
+      oem_page = GetOEMCP();
+    }
+    allocation_t unicode_data, ansi_data, oem_data, locale_data;
+    auto encoded = [&](allocation_t &allocation, UINT code_page) {
+      const auto size = WideCharToMultiByte(code_page, 0, wide.c_str(), -1, nullptr, 0, nullptr, nullptr);
+      if (!size) {
+        return false;
+      }
+      std::vector<char> bytes(size);
+      return WideCharToMultiByte(code_page, 0, wide.c_str(), -1, bytes.data(), size, nullptr, nullptr) == size && allocation.prepare(bytes.data(), bytes.size());
+    };
+    // CloseClipboard synthesizes missing text/locale formats and advances the
+    // counter. Prepare all formats before opening so the guarded publication's
+    // captured counter remains correct after close without an unprotected read.
+    if (!unicode_data.prepare(wide.c_str(), (wide.size() + 1) * sizeof(wchar_t)) || !encoded(ansi_data, ansi_page) || !encoded(oem_data, oem_page) || !locale_data.prepare(&locale, sizeof(locale))) {
+      return status_e::unavailable;
+    }
     open_t clipboard;
     if (!clipboard.opened) {
-      GlobalFree(handle);
       return status_e::unavailable;
     }
     const auto current = GetClipboardSequenceNumber();
@@ -210,11 +266,9 @@ namespace clipboard {
       *written_sequence = current;
     }
     if (expected_sequence && *expected_sequence != current) {
-      GlobalFree(handle);
       return status_e::conflict;
     }
-    if (!EmptyClipboard() || !SetClipboardData(CF_UNICODETEXT, handle)) {
-      GlobalFree(handle);
+    if (!EmptyClipboard() || !unicode_data.publish(CF_UNICODETEXT) || !ansi_data.publish(CF_TEXT) || !oem_data.publish(CF_OEMTEXT) || !locale_data.publish(CF_LOCALE)) {
       return status_e::unavailable;
     }
     if (written_sequence) {
