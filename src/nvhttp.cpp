@@ -1674,7 +1674,7 @@ namespace nvhttp {
     if (!enabled) {
       return false;
     }
-    const auto certificate = crypto::x509(cert);
+    auto certificate = crypto::x509(cert);
     if (!certificate) {
       return false;
     }
