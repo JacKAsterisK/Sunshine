@@ -77,6 +77,30 @@ namespace rtsp_stream {
   void terminate_sessions_by_cert(std::string_view cert);
 
   /**
+   * @brief Run an operation only while a running stream belongs to the exact client certificate.
+   * @param cert Canonical PEM identity of the requesting paired client.
+   * @param action Short operation protected from concurrent session removal.
+   * @return True when a matching running session was found and the action executed.
+   */
+  bool with_active_session(std::string_view cert, const std::function<void()> &action);
+
+  /**
+   * @brief Get the generation of an exact client's running stream without doing I/O.
+   * @param cert Canonical requester certificate.
+   * @return Launch generation if a matching running stream exists.
+   */
+  std::optional<uint32_t> active_session_id(std::string_view cert);
+
+  /**
+   * @brief Guard an operation against disconnect and reconnect of the same paired client.
+   * @param cert Canonical requester certificate.
+   * @param expected_id Generation recorded when a bulk transfer began.
+   * @param action Short action to execute; never scan or hash files under this lock.
+   * @return True if the exact original generation is still running and the action ran.
+   */
+  bool with_active_session(std::string_view cert, uint32_t expected_id, const std::function<void()> &action);
+
+  /**
    * @brief Runs the RTSP server loop.
    */
   void start();

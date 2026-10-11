@@ -9,6 +9,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstddef>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -408,6 +409,15 @@ namespace nvhttp {
      * @return `true` when the exact certificate belongs to one enabled paired client.
      */
     bool authorize_client_certificate(std::string_view cert);
+
+    /**
+     * @brief Exercise clipboard authorization without touching the user's clipboard.
+     * @param cert Request client certificate.
+     * @param active_cert Exact certificate owning the simulated running stream.
+     * @param action Action that must only run when both identities are authorized.
+     * @return True if the action ran.
+     */
+    bool clipboard_action(std::string_view cert, std::string_view active_cert, const std::function<void()> &action);
 
     /**
      * @brief Complete and remove a pairing session without running the protocol phases.

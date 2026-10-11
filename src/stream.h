@@ -94,5 +94,12 @@ namespace stream {
      * @return PEM certificate associated with the session's client.
      */
     const std::string &client_cert(session_t &session);
+
+    /**
+     * @brief Return the unique launch generation for a streaming session.
+     * @param session Streaming session to inspect.
+     * @return Monotonic launch identifier for this process.
+     */
+    uint32_t launch_id(session_t &session);
   }  // namespace session
 }  // namespace stream

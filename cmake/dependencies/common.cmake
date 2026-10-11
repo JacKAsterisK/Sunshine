@@ -15,6 +15,7 @@ add_subdirectory("${CMAKE_SOURCE_DIR}/third-party/moonlight-common-c/enet")
 
 # web server
 add_subdirectory("${CMAKE_SOURCE_DIR}/third-party/Simple-Web-Server")
+include(dependencies/SimpleWebRequestSocket)
 
 # lizardbyte common helpers
 set(LIZARDBYTE_COMMON_BUILD_TEST_SUPPORT ${BUILD_TESTS}

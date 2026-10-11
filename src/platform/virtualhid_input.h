@@ -304,7 +304,9 @@ namespace platf::virtualhid {
   void touch_update(client_context_t &context, const touch_port_t &touch_port, const touch_input_t &touch);
 
   /**
-   * @brief Submit a pen event.
+   * @brief Submit a pen event, aggregating held barrel buttons into Windows Ink's single barrel flag.
+   *
+   * Cancel-all releases all held buttons. Platforms with independent pen button support retain each button's identity.
    *
    * @param context Client context.
    * @param touch_port Touch coordinate bounds used for scaling.

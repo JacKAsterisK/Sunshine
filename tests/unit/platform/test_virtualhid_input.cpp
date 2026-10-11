@@ -934,6 +934,58 @@ TEST_F(VirtualHidDeviceTest, TranslatesPenButtonsToolsAndTransitions) {
   platf::virtualhid::pen_update(*client(), viewport, pen);
 }
 
+#ifdef _WIN32
+TEST_F(VirtualHidDeviceTest, KeepsWindowsPenBarrelPressedUntilEveryButtonIsReleased) {
+  const platf::touch_port_t viewport {0, 0, 1280, 720, 1280, 720};
+  platf::pen_input_t pen {LI_TOUCH_EVENT_HOVER, LI_TOOL_TYPE_PEN, LI_PEN_BUTTON_PRIMARY, LI_TILT_UNKNOWN, LI_ROT_UNKNOWN, 0.5F, 0.5F, 0.0F, 0.0F, 0.0F};
+  platf::virtualhid::pen_update(*client(), viewport, pen);
+  auto submissions = client()->pen->submit_count();
+  EXPECT_EQ(submissions, 2);
+
+  pen.penButtons = LI_PEN_BUTTON_PRIMARY | LI_PEN_BUTTON_SECONDARY;
+  platf::virtualhid::pen_update(*client(), viewport, pen);
+  EXPECT_EQ(client()->pen->submit_count(), ++submissions);
+  EXPECT_TRUE(client()->pressed_pen_buttons.contains(lvh::PenButton::primary));
+  EXPECT_TRUE(client()->pressed_pen_buttons.contains(lvh::PenButton::secondary));
+
+  // Releasing one physical button must not emit a Windows barrel release.
+  pen.penButtons = LI_PEN_BUTTON_SECONDARY;
+  platf::virtualhid::pen_update(*client(), viewport, pen);
+  EXPECT_EQ(client()->pen->submit_count(), ++submissions);
+  EXPECT_FALSE(client()->pressed_pen_buttons.contains(lvh::PenButton::primary));
+  EXPECT_TRUE(client()->pressed_pen_buttons.contains(lvh::PenButton::secondary));
+
+  // A simultaneous swap between held buttons must not release and re-press.
+  pen.penButtons = LI_PEN_BUTTON_TERTIARY;
+  platf::virtualhid::pen_update(*client(), viewport, pen);
+  EXPECT_EQ(client()->pen->submit_count(), ++submissions);
+  EXPECT_TRUE(client()->pressed_pen_buttons.contains(lvh::PenButton::tertiary));
+
+  pen.penButtons = 0;
+  platf::virtualhid::pen_update(*client(), viewport, pen);
+  submissions += 2;
+  EXPECT_EQ(client()->pen->submit_count(), submissions);
+  EXPECT_TRUE(client()->pressed_pen_buttons.empty());
+
+  pen.penButtons = LI_PEN_BUTTON_PRIMARY | LI_PEN_BUTTON_SECONDARY | LI_PEN_BUTTON_TERTIARY;
+  platf::virtualhid::pen_update(*client(), viewport, pen);
+  submissions += 2;
+  EXPECT_EQ(client()->pen->submit_count(), submissions);
+  EXPECT_EQ(client()->pressed_pen_buttons.size(), 3);
+
+  // Cancel-all releases once even if its packet still contains pressed bits.
+  pen.eventType = LI_TOUCH_EVENT_CANCEL_ALL;
+  platf::virtualhid::pen_update(*client(), viewport, pen);
+  submissions += 2;
+  EXPECT_EQ(client()->pen->submit_count(), submissions);
+  EXPECT_TRUE(client()->pressed_pen_buttons.empty());
+  EXPECT_EQ(client()->pen->last_submitted_tool().transition, lvh::PointerTransition::cancel);
+
+  platf::virtualhid::pen_update(*client(), viewport, pen);
+  EXPECT_EQ(client()->pen->submit_count(), ++submissions);
+}
+#endif
+
 TEST_F(VirtualHidDeviceTest, PlatformWrappersForwardToVirtualHidContext) {
   auto platform_input = platf::input();
   ASSERT_TRUE(platform_input);

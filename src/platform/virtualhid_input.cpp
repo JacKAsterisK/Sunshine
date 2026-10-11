@@ -899,32 +899,37 @@ namespace platf::virtualhid {
       return;
     }
 
-    const auto pen_buttons = static_cast<std::byte>(pen.penButtons);
+    const auto pen_buttons = static_cast<std::byte>(pen.eventType == LI_TOUCH_EVENT_CANCEL_ALL ? 0 : pen.penButtons);
     const std::array button_states {
       std::pair {lvh::PenButton::primary, (pen_buttons & static_cast<std::byte>(LI_PEN_BUTTON_PRIMARY)) != std::byte {}},
       std::pair {lvh::PenButton::secondary, (pen_buttons & static_cast<std::byte>(LI_PEN_BUTTON_SECONDARY)) != std::byte {}},
       std::pair {lvh::PenButton::tertiary, (pen_buttons & static_cast<std::byte>(LI_PEN_BUTTON_TERTIARY)) != std::byte {}},
     };
+#ifdef _WIN32
+    const bool was_barrel_pressed = !context.pressed_pen_buttons.empty();
+#endif
     for (const auto &[button, pressed] : button_states) {
       const auto was_pressed = context.pressed_pen_buttons.contains(button);
       if (pressed == was_pressed) {
         continue;
       }
 
+#ifndef _WIN32
       log_failure("submit libvirtualhid pen button"sv, context.pen->button(button, pressed));
+#endif
       if (pressed) {
         context.pressed_pen_buttons.insert(button);
       } else {
         context.pressed_pen_buttons.erase(button);
       }
     }
-
-    if (pen.eventType == LI_TOUCH_EVENT_CANCEL_ALL) {
-      for (const auto button : context.pressed_pen_buttons) {
-        log_failure("release libvirtualhid pen button"sv, context.pen->button(button, false));
-      }
-      context.pressed_pen_buttons.clear();
+#ifdef _WIN32
+    // Windows Ink has one barrel flag shared by every physical pen button.
+    const bool barrel_pressed = !context.pressed_pen_buttons.empty();
+    if (barrel_pressed != was_barrel_pressed) {
+      log_failure("submit libvirtualhid pen barrel button"sv, context.pen->button(lvh::PenButton::primary, barrel_pressed));
     }
+#endif
 
     using enum lvh::PointerTransition;
     auto transition = update;

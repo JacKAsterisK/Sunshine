@@ -2195,6 +2195,13 @@ namespace stream {
     }
 
     /**
+     * @brief Return the streaming session's immutable launch identifier.
+     */
+    uint32_t launch_id(session_t &session) {
+      return session.launch_session_id;
+    }
+
+    /**
      * @brief Stop the active streaming session and prevent new packets from being queued.
      */
     void stop(session_t &session) {

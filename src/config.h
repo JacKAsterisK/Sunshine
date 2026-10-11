@@ -308,6 +308,8 @@ namespace config {
 
     bool high_resolution_scrolling;  ///< Enable high-resolution mouse-wheel events.
     bool native_pen_touch;  ///< Enable native pen and touch injection.
+    bool clipboard;  ///< Allow paired active streams to synchronize Unicode clipboard text.
+    bool clipboard_files;  ///< Allow paired active streams to copy files and folders bidirectionally.
   };
 
   namespace flag {

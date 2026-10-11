@@ -753,6 +753,62 @@ consent prompt for directory ACLs, so the Web UI shows setup steps for correctin
     </tr>
 </table>
 
+### clipboard
+
+<table>
+    <tr>
+        <td>Description</td>
+        <td colspan="2">
+            Allow bidirectional Unicode text clipboard synchronization on Windows.
+            A compatible Moonlight client must enable synchronization, present its exact enabled paired
+            certificate over HTTPS, and own an active stream. Requests are limited to 1 MiB of valid UTF-8 text.
+            Clipboard content is never logged. Files and folders are not transferred by this setting.
+        </td>
+    </tr>
+    <tr>
+        <td>Default</td>
+        <td colspan="2">@code{}
+            disabled
+            @endcode</td>
+    </tr>
+    <tr>
+        <td>Example</td>
+        <td colspan="2">@code{}
+            clipboard = enabled
+            @endcode</td>
+    </tr>
+</table>
+
+### clipboard_files
+
+<table>
+    <tr>
+        <td>Description</td>
+        <td colspan="2">
+            Allow bidirectional clipboard file and folder transfer on Windows through a compatible client.
+            Protocol v1 supports local drives and rejects network shares, mapped network drives and reparse points.
+            The enabled paired client must own the same running stream generation throughout the transfer.
+            Files are staged and checked before the receiving clipboard becomes pasteable. Small files are
+            batched, with four bounded transfer workers, 4 MiB batches, a 32 MiB manifest limit,
+            up to 100,000 entries and 64 GiB per offer.
+            A changed receiving clipboard prevents a stale transfer from replacing newer local content.
+            Paths and payloads are not logged. Enable only for clients you trust to copy these files.
+        </td>
+    </tr>
+    <tr>
+        <td>Default</td>
+        <td colspan="2">@code{}
+            disabled
+            @endcode</td>
+    </tr>
+    <tr>
+        <td>Example</td>
+        <td colspan="2">@code{}
+            clipboard_files = enabled
+            @endcode</td>
+    </tr>
+</table>
+
 ### keybindings
 
 <table>

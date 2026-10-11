@@ -685,8 +685,47 @@ namespace rtsp_stream {
     }
 
     /**
-     * @brief Removes the provided session from the set of sessions.
-     * @param session The session to remove.
+     * @brief Run a short operation under the matching running stream's ownership guard.
+     * @param cert Canonical paired certificate of the requester.
+     * @param action Short operation to execute while the session cannot be removed.
+     * @param expected_id Optional exact generation captured when a bulk transfer began.
+     * @return True when the operation ran.
+     */
+    bool with_active_session(std::string_view cert, const std::function<void()> &action, std::optional<uint32_t> expected_id = {}) {
+      if (cert.empty()) {
+        return false;
+      }
+      auto lg = _session_slots.lock();
+      for (const auto &slot : *_session_slots) {
+        if (stream::session::client_cert(*slot) == cert && stream::session::state(*slot) == stream::session::state_e::RUNNING && (!expected_id || stream::session::launch_id(*slot) == *expected_id)) {
+          action();
+          return true;
+        }
+      }
+      return false;
+    }
+
+    /**
+     * @brief Read a matching running stream generation under the session registry lock.
+     * @param cert Canonical client certificate.
+     * @return Running stream generation, or no value.
+     */
+    std::optional<uint32_t> active_session_id(std::string_view cert) {
+      if (cert.empty()) {
+        return {};
+      }
+      auto lg = _session_slots.lock();
+      for (const auto &slot : *_session_slots) {
+        if (stream::session::client_cert(*slot) == cert && stream::session::state(*slot) == stream::session::state_e::RUNNING) {
+          return stream::session::launch_id(*slot);
+        }
+      }
+      return {};
+    }
+
+    /**
+     * @brief Remove a stream from the active session set.
+     * @param session Session to remove.
      */
     void remove(const std::shared_ptr<stream::session_t> &session) {
       auto lg = _session_slots.lock();
@@ -771,11 +810,28 @@ namespace rtsp_stream {
   }
 
   /**
-   * @brief Send the serialized response over the active socket.
-   *
-   * @param sock Socket used to read or write the protocol message.
-   * @param sv String view containing the text to inspect.
-   * @return Network operation status.
+   * @brief Run a short operation guarded by exact active-stream ownership.
+   * @param cert Canonical requester certificate.
+   * @param action Short action to execute.
+   * @return True when a matching running session executed the action.
+   */
+  bool with_active_session(std::string_view cert, const std::function<void()> &action) {
+    return server.with_active_session(cert, action);
+  }
+
+  std::optional<uint32_t> active_session_id(std::string_view cert) {
+    return server.active_session_id(cert);
+  }
+
+  bool with_active_session(std::string_view cert, uint32_t expected_id, const std::function<void()> &action) {
+    return server.with_active_session(cert, action, expected_id);
+  }
+
+  /**
+   * @brief Send bytes over an RTSP connection.
+   * @param sock Connected socket.
+   * @param sv Payload to send.
+   * @return Zero on success, or a negative error.
    */
   int send(tcp::socket &sock, const std::string_view &sv) {
     std::size_t bytes_send = 0;

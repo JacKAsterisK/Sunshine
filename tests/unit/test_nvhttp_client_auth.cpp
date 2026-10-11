@@ -29,6 +29,7 @@ protected:
   void SetUp() override {
     BaseTest::SetUp();
     original_state_file = config::nvhttp.file_state;
+    original_clipboard = config::input.clipboard;
     original_fresh_state = config::sunshine.flags[config::flag::FRESH_STATE];
     state_file = fs::path {SUNSHINE_TEST_BIN_DIR} / "client_authorization_state.json";
 
@@ -49,6 +50,7 @@ protected:
     fs::remove(state_file, remove_error);
 
     config::nvhttp.file_state = original_state_file;
+    config::input.clipboard = original_clipboard;
     config::sunshine.flags[config::flag::FRESH_STATE] = original_fresh_state;
     BaseTest::TearDown();
   }
@@ -57,6 +59,7 @@ private:
   fs::path state_file;  ///< Task-specific persisted state fixture.
   std::string original_state_file;  ///< State-file setting restored after each test.
   bool original_fresh_state;  ///< Fresh-state flag restored after each test.
+  bool original_clipboard;  ///< Clipboard permission restored after each test.
 };
 
 TEST_F(ClientAuthorizationTest, CanonicalIdentityFailsClosedAndTracksEnableState) {
@@ -195,4 +198,35 @@ TEST_F(ClientAuthorizationTest, ConcurrentStateChangesRemainConsistent) {
   EXPECT_TRUE(operations_succeeded);
   ASSERT_TRUE(nvhttp::set_client_enabled(uuid, false));
   EXPECT_FALSE(nvhttp::test_support::authorize_client_certificate(credentials.x509));
+}
+
+TEST_F(ClientAuthorizationTest, ClipboardRequiresOptInExactEnabledPairingAndMatchingRunningIdentity) {
+  const auto paired = test_utils::certificates::generate_ca_credentials("Clipboard paired client");
+  const auto other = crypto::gen_creds("Clipboard other client", 2048);
+  const auto derived = test_utils::certificates::generate_derived_leaf(paired);
+  const auto uuid = nvhttp::test_support::add_client("paired", paired.x509, true);
+  ASSERT_FALSE(uuid.empty());
+  ASSERT_FALSE(nvhttp::test_support::add_client("other", other.x509, true).empty());
+  unsigned calls = 0;
+  auto action = [&]() {
+    ++calls;
+  };
+
+  config::input.clipboard = false;
+  EXPECT_FALSE(nvhttp::test_support::clipboard_action(paired.x509, paired.x509, action));
+  config::input.clipboard = true;
+  EXPECT_FALSE(nvhttp::test_support::clipboard_action(paired.x509, "", action));
+  EXPECT_FALSE(nvhttp::test_support::clipboard_action(paired.x509, other.x509, action));
+  EXPECT_FALSE(nvhttp::test_support::clipboard_action(derived.x509, paired.x509, action));
+  EXPECT_FALSE(nvhttp::test_support::clipboard_action("not a certificate", paired.x509, action));
+  EXPECT_EQ(calls, 0);
+  EXPECT_TRUE(nvhttp::test_support::clipboard_action(test_utils::certificates::to_crlf_pem(paired.x509), paired.x509, action));
+  EXPECT_EQ(calls, 1);
+  ASSERT_TRUE(nvhttp::set_client_enabled(uuid, false));
+  EXPECT_FALSE(nvhttp::test_support::clipboard_action(paired.x509, paired.x509, action));
+  EXPECT_EQ(calls, 1);
+  ASSERT_TRUE(nvhttp::set_client_enabled(uuid, true));
+  ASSERT_TRUE(nvhttp::unpair_client(uuid));
+  EXPECT_FALSE(nvhttp::test_support::clipboard_action(paired.x509, paired.x509, action));
+  EXPECT_EQ(calls, 1);
 }
