@@ -1843,8 +1843,8 @@ namespace nvhttp {
       response->write(status::client_error_bad_request, "", headers);
       return;
     }
-    const bool retrieval = op->second == "offer" || op->second == "batch" || op->second == "status";
-    if ((request->method == "GET" && !retrieval) || (request->method == "POST" && (op->second == "offer" || op->second == "status"))) {
+    const bool retrieval = op->second == "offer" || op->second == "batch" || op->second == "status" || op->second == "sequence";
+    if ((request->method == "GET" && !retrieval) || (request->method == "POST" && (op->second == "offer" || op->second == "status" || op->second == "sequence"))) {
       response->write(status::client_error_bad_request, "", headers);
       return;
     }
@@ -1859,7 +1859,7 @@ namespace nvhttp {
       const auto parsed = std::from_chars(value.data(), value.data() + value.size(), output);
       return args.count(std::string(key)) == 1 && !value.empty() && parsed.ec == std::errc {} && parsed.ptr == value.data() + value.size();
     };
-    if (!number("batch", batch) || !number(op->second == "offer" ? "since" : "sequence", sequence) || (op->second == "commit" && !args.contains("sequence"))) {
+    if (!number("batch", batch) || !number(op->second == "offer" ? "since" : "sequence", sequence) || ((op->second == "commit" || op->second == "begin") && !args.contains("sequence"))) {
       response->write(status::client_error_bad_request, "", headers);
       return;
     }

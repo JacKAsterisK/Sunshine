@@ -1,5 +1,5 @@
 /**
- * @file clipboardfilesengine.h
+ * @file
  * @brief Shared v1 bounded file clipboard wire format and Windows staging engine.
  */
 #pragma once

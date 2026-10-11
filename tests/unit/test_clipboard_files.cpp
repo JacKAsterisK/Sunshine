@@ -334,9 +334,23 @@ static int run_clipboardfiles_tests() {
     authorized = false;
     check(service.request("owner#1", guard, "offer", {}, 0, UINT32_MAX, {}).status == 403 && reads == 0, "Unauthorized offer inspected clipboard");
     authorized = true;
+    auto destination = service.request("owner#1", guard, "sequence", {}, 0, UINT32_MAX, {});
+    check(destination.status == 204 && destination.sequence == hostSequence && reads == 0, "Destination baseline exported host clipboard files");
     check(service.request("owner#1", guard, "begin", {}, 0, 0, "invalid").status == 409, "Invalid upload manifest accepted");
     source_t uploadSource({sourceRoot / L"tiny0"}, 12);
-    auto begin = service.request("owner#1", guard, "begin", {}, 0, UINT32_MAX, encode_manifest(uploadSource.manifest));
+    const auto uploadManifest = encode_manifest(uploadSource.manifest);
+    unsigned scanChecks = 0;
+    source_t racingSource({sourceRoot}, 99, [&] {
+      if (++scanChecks == 10) {
+        hostSequence++;  // A newer host copy occurs during real file enumeration/hashing.
+      }
+      return false;
+    });
+    check(scanChecks > 10, "Source scan race fixture did not run");
+    auto rejectedBegin = service.request("owner#1", guard, "begin", {}, 0, destination.sequence, uploadManifest);
+    check(rejectedBegin.status == 409 && rejectedBegin.id.empty() && publications == 0 && !fs::exists(root / L"host-stage"), "Pre-scan host copy was overwritten or allocated a stage");
+    hostSequence--;
+    auto begin = service.request("owner#1", guard, "begin", {}, 0, destination.sequence, uploadManifest);
     check(begin.status == 202 && valid_id(begin.id), "Async begin failed");
     check(poll(service, "owner#1", guard, begin.id).status == 200, "Stage prepare failed");
     check(service.request("owner#2", guard, "status", begin.id, 0, 0, {}).status == 409, "Cross-owner transfer ID leaked");
@@ -346,7 +360,7 @@ static int run_clipboardfiles_tests() {
     auto complete = poll(service, "owner#1", guard, begin.id);
     check(complete.status == 200 && publications == 1 && complete.sequence == 101 && read(published[0]) == "tiny-content-0", "Verified host publish failed");
 
-    auto stale = service.request("owner#1", guard, "begin", {}, 0, UINT32_MAX, encode_manifest(uploadSource.manifest));
+    auto stale = service.request("owner#1", guard, "begin", {}, 0, hostSequence, encode_manifest(uploadSource.manifest));
     check(poll(service, "owner#1", guard, stale.id).status == 200, "Stale fixture stage failed");
     check(service.request("owner#1", guard, "batch", stale.id, 0, 0, uploadSource.read_batch(0)).status == 200, "Stale fixture batch failed");
     hostSequence++;

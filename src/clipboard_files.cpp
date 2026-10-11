@@ -293,6 +293,15 @@ namespace clipboard_files {
     try {
       auto context = impl->desktop.enter_context ? impl->desktop.enter_context() : std::shared_ptr<void>();
       require(!impl->desktop.enter_context || context != nullptr, "Cannot enter interactive-user file security context");
+      if (op == "sequence") {
+        require(body.empty(), "Unexpected sequence body");
+        require(guard([&] {
+                  result.sequence = impl->desktop.sequence();
+                }),
+                "Stream is no longer authorized");
+        result.status = 204;
+        return result;
+      }
       impl->prune();
       if (op == "offer") {
         require(body.empty(), "Unexpected offer body");
@@ -360,6 +369,7 @@ namespace clipboard_files {
         auto manifest = decode_manifest(body);
         require(guard([&] {
                   result.sequence = impl->desktop.sequence();
+                  require(sequence == result.sequence, "Clipboard destination changed before upload began");
                 }),
                 "Stream is no longer authorized");
         auto record = impl->create(owner, result.sequence, true);
