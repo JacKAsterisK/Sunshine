@@ -6,6 +6,7 @@
 
 #include <future>
 #include <optional>
+#include <thread>
 #include <unordered_map>
 #ifdef _WIN32
   #include <sddl.h>
